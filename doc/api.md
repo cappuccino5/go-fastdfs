@@ -41,6 +41,7 @@ file:上传的文件
 scene:场景
 output:输出
 path:自定义路径
+file_dir:自定义业务文件目录
 具体请参阅示例代码
 ```
 
@@ -91,3 +92,6 @@ force:是否强行修复(0|1)
 http://10.1.50.90:8080/group/repair_fileinfo
 
 ```
+## 文件命名规则示例
+ 项目名/业务文件/文件类型/日期时间/文件名
+ main/user/headpic/images/20190529/11/32/3/ca7b7a747b5042e42f249e164103ada4.jpg

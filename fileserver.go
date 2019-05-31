@@ -119,7 +119,7 @@ const (
 	CONST_MESSAGE_CLUSTER_IP       = "Can only be called by the cluster ip or 127.0.0.1 or admin_ips(cfg.json),current ip:%s"
 	cfgJson                        = `{
 	"绑定端号": "端口",
-	"addr": ":8080",
+	"addr": ":8083",
 	"PeerID": "集群内唯一,请使用0-9的单字符，默认自动生成",
 	"peer_id": "%s",
 	"本主机地址": "本机http地址,默认自动生成(注意端口必须与addr中的端口一致），必段为内网，自动生成不为内网请自行修改，下同",
@@ -165,7 +165,7 @@ const (
 	"文件去重算法md5可能存在冲突，默认md5": "sha1|md5",
 	"file_sum_arithmetic": "md5",
 	"是否支持按组（集群）管理,主要用途是Nginx支持多集群": "默认不支持,不支持时路径为http://10.1.5.4:8080/action,支持时为http://10.1.5.4:8080/group(配置中的group参数)/action,action为动作名，如status,delete,sync等",
-	"support_group_manage": false,
+	"support_group_manage": true,
 	"管理ip列表": "用于管理集的ip白名单,",
 	"admin_ips": ["127.0.0.1"],
 	"是否启用迁移": "默认不启用",
@@ -334,6 +334,7 @@ func NewServer() *Server {
 		CompactionTableSize: 1024 * 1024 * 20,
 		WriteBuffer:         1024 * 1024 * 20,
 	}
+
 	server.ldb, err = leveldb.OpenFile(CONST_LEVELDB_FILE_NAME, opts)
 	if err != nil {
 		fmt.Println(err)
@@ -1069,7 +1070,8 @@ func (this *Server) Download(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("list dir deny"))
 			return
 		}
-		//staticHandler.ServeHTTP(w, r)
+		// staticHandler.ServeHTTP(w, r)
+
 		this.DownloadNormalFileByURI(w, r)
 		return
 	}
@@ -1214,7 +1216,6 @@ func (this *Server) postFileToPeer(fileInfo *FileInfo) {
 			log.Error(string(buffer))
 		}
 	}()
-	//fmt.Println("postFile",fileInfo)
 	for i, peer = range Config().Peers {
 		_ = i
 		if fileInfo.Peers == nil {
@@ -1265,7 +1266,6 @@ func (this *Server) postFileToPeer(fileInfo *FileInfo) {
 			this.SaveFileMd5Log(fileInfo, CONST_Md5_ERROR_FILE_NAME)
 		}
 		if strings.HasPrefix(result, "http://") {
-			log.Info(result)
 			if !this.util.Contains(peer, fileInfo.Peers) {
 				fileInfo.Peers = append(fileInfo.Peers, peer)
 				if _, err = this.SaveFileInfoToLevelDB(fileInfo.Md5, fileInfo, this.ldb); err != nil {
@@ -1888,22 +1888,43 @@ func (this *Server) BuildFileResult(fileInfo *FileInfo, r *http.Request) FileRes
 }
 func (this *Server) SaveUploadFile(file multipart.File, header *multipart.FileHeader, fileInfo *FileInfo, r *http.Request) (*FileInfo, error) {
 	var (
-		err     error
-		outFile *os.File
-		folder  string
-		fi      os.FileInfo
+		err            error
+		outFile        *os.File
+		folder         string
+		fi             os.FileInfo
+		fileSuffix     string
+		fileSuffixName string
+		reometFile     string
 	)
 	defer file.Close()
 	fileInfo.Name = header.Filename
+	reometFile = r.FormValue("file_dir")
+	fileSuffix = path.Ext(fileInfo.Name)
+	switch fileSuffix {
+	case ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp":
+		fileSuffixName = "images"
+	case ".amr", ".MP3", ".Wav", ".Ogg", ".mp3", ".wav", ".ogg":
+		fileSuffixName = "audio"
+	case ".MP4", ".WebM", ".mp4", ".webm":
+		fileSuffixName = "video"
+	default:
+		fileSuffixName = "other"
+	}
 	if Config().RenameFile {
-		fileInfo.ReName = this.util.MD5(this.util.GetUUID()) + path.Ext(fileInfo.Name)
+		fileInfo.ReName = this.util.MD5(this.util.GetUUID()) + fileSuffix
 	}
 	folder = time.Now().Format("20060102/15/04")
 	if Config().PeerId != "" {
 		folder = fmt.Sprintf(folder+"/%s", Config().PeerId)
 	}
+	if reometFile != "" {
+		folder = fmt.Sprintf("%s/%s/%s", reometFile, fileSuffixName, folder)
+	} else {
+		folder = fmt.Sprintf("%s/%s", fileSuffixName, folder)
+	}
 	if fileInfo.Scene != "" {
 		folder = fmt.Sprintf(STORE_DIR+"/%s/%s", fileInfo.Scene, folder)
+
 	} else {
 		folder = fmt.Sprintf(STORE_DIR+"/%s", folder)
 	}
@@ -1953,6 +1974,7 @@ func (this *Server) SaveUploadFile(file multipart.File, header *multipart.FileHe
 	}
 	v := this.util.GetFileSum(outFile, Config().FileSumArithmetic)
 	fileInfo.Md5 = v
+
 	//fileInfo.Path = folder //strings.Replace( folder,DOCKER_DIR,"",1)
 	fileInfo.Path = strings.Replace(folder, DOCKER_DIR, "", 1)
 	fileInfo.Peers = append(fileInfo.Peers, this.host)
@@ -1997,6 +2019,7 @@ func (this *Server) Upload(w http.ResponseWriter, r *http.Request) {
 		if Config().EnableCustomPath {
 			fileInfo.Path = r.FormValue("path")
 			fileInfo.Path = strings.Trim(fileInfo.Path, "/")
+
 		}
 		scene = r.FormValue("scene")
 		code = r.FormValue("code")
@@ -2510,6 +2533,7 @@ func (this *Server) AutoRepair(forceRepair bool) {
 				if v, ok := this.statMap.GetValue(countKey); ok {
 					switch v.(type) {
 					case int64:
+
 						if v.(int64) != dateStat.FileCount || forceRepair { //不相等,找差异
 							//TODO
 							req := httplib.Post(fmt.Sprintf("%s%s", peer, this.getRequestURI("get_md5s_by_date")))
@@ -2539,7 +2563,7 @@ func (this *Server) AutoRepair(forceRepair bool) {
 									this.AppendToQueue(fileInfo)
 								}
 							}
-							//Update(peer,dateStat)
+							//	Update(peer,dateStat)
 						}
 					}
 				} else {
@@ -3622,17 +3646,17 @@ func (this *Server) Main() {
 			//this.util.RemoveEmptyDir(STORE_DIR)
 		}
 	}()
-	go this.CleanAndBackUp()
-	go this.CheckClusterStatus()
-	go this.LoadQueueSendToPeer()
-	go this.ConsumerPostToPeer()
+	go this.CleanAndBackUp()      // 备份拉取节点数据6h
+	go this.CheckClusterStatus()  //检查节点状态，断开连接则发送邮箱预警 10分钟
+	go this.LoadQueueSendToPeer() // 1.从db中查询需要备份的文件
+	go this.ConsumerPostToPeer()  // 发起文件同步消息
 	go this.ConsumerLog()
-	go this.ConsumerDownLoad()
+	go this.ConsumerDownLoad() // 2.备份文件,syncfile_info接口将文件信息写入channel
 	//go this.LoadSearchDict()
 	if Config().EnableMigrate {
 		go this.RepairFileInfoFromFile()
 	}
-	if Config().AutoRepair {
+	if Config().AutoRepair { // 自动修复同步集群节点数据
 		go func() {
 			for {
 				time.Sleep(time.Minute * 3)

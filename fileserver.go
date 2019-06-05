@@ -27,6 +27,7 @@ import (
 	slog "log"
 	random "math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"net/smtp"
@@ -1870,7 +1871,7 @@ func (this *Server) BuildFileResult(fileInfo *FileInfo, r *http.Request) FileRes
 	}
 	p = strings.Replace(fileInfo.Path, STORE_DIR_NAME+"/", "", 1)
 	p = Config().Group + "/" + p + "/" + outname
-	downloadUrl = fmt.Sprintf("http://%s/%s", r.Host, p)
+	downloadUrl = fmt.Sprintf("%s/%s", this.host, p)
 	if Config().DownloadDomain != "" {
 		downloadUrl = fmt.Sprintf("http://%s/%s", Config().DownloadDomain, p)
 	}
@@ -1885,6 +1886,25 @@ func (this *Server) BuildFileResult(fileInfo *FileInfo, r *http.Request) FileRes
 	fileResult.Src = fileResult.Path
 	fileResult.Scenes = fileInfo.Scene
 	return fileResult
+}
+
+// 获取本地的外网IP地址
+func (this *Server) GetLocalIp(addr string) string {
+	var (
+		ipNet *net.IPNet
+		ok    bool
+	)
+	addrs, _ := net.InterfaceAddrs()
+	for _, address := range addrs {
+		if ipNet, ok = address.(*net.IPNet); !ok || ipNet.IP.IsLoopback() {
+			continue
+		}
+		if ipNet.IP.To4() == nil {
+			continue
+		}
+		addr = ipNet.IP.String()
+	}
+	return addr
 }
 func (this *Server) SaveUploadFile(file multipart.File, header *multipart.FileHeader, fileInfo *FileInfo, r *http.Request) (*FileInfo, error) {
 	var (
